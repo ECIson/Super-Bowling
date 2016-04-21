@@ -3,10 +3,14 @@ using System.Collections;
 using Vuforia;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
+using System.Reflection;
 
 public class Editor : MonoBehaviour {
 
     private RaycastHit hit;
+
+    public GameObject wandImage;
+    public GameObject wandEnd;
 
     public GameObject ARCam;
     public GameObject mainWorkspace;
@@ -20,6 +24,9 @@ public class Editor : MonoBehaviour {
     public Button confirmButton;
 
     public Button translateButton;
+    public Button rotateButton;
+    public Button scaleButton;
+    public Button optionsButton;
 
     public int toolMode = 0;
     //0 is main menu
@@ -45,6 +52,7 @@ public class Editor : MonoBehaviour {
 
     public int objectNumber = 0;
     private ArrayList objects = new ArrayList();
+    private Vector3 originalScale;
 
 	// Use this for initialization
 	void Start () {
@@ -93,6 +101,21 @@ public class Editor : MonoBehaviour {
             translatePressed(translateButton);
         });
 
+        rotateButton.onClick.AddListener(delegate
+        {
+            rotatePressed(rotateButton);
+        });
+
+        scaleButton.onClick.AddListener(delegate
+        {
+            scalePressed(scaleButton);
+        });
+
+        optionsButton.onClick.AddListener(delegate
+        {
+            optionsPressed(optionsButton);
+        });
+
 	}
 	
 	// Update is called once per frame
@@ -107,28 +130,45 @@ public class Editor : MonoBehaviour {
             else
                 ray = Camera.main.ScreenPointToRay(Input.mousePosition);
 
-            if (Physics.Raycast(ray, out hit) && validObject(hit.transform.name) && hit.transform.parent.name == "Workspace" && toolMode == 1)
+            if (Physics.Raycast(ray, out hit)) {
+                Debug.Log(hit.transform.name);
+            }
+            if (Physics.Raycast(ray, out hit) && FindParentWithTag(hit.transform.gameObject, "Obstacle") != null
+                && FindParentWithName(hit.transform.gameObject, "EditorWorkspace") != null && toolMode == 1)
             {
-                selectObject(hit.transform.gameObject);
+                GameObject obstacle = FindParentWithTag(hit.transform.gameObject, "Obstacle");
+                selectObject(obstacle);
+
                 title.text = "Confirm the object to select it (" + hit.transform.gameObject + " selected)";
                 confirmButton.gameObject.SetActive(true);
             }
-            else if (Physics.Raycast(ray, out hit) && hit.transform.parent.name == "ObjectChooser" && toolMode == 2)
+            else if (Physics.Raycast(ray, out hit) && FindParentWithTag(hit.transform.gameObject, "Obstacle") != null 
+                && FindParentWithName(hit.transform.gameObject, "ObjectChooser") != null && toolMode == 2)
             {
-                GameObject obj = (GameObject)Instantiate(hit.transform.gameObject, mainWorkspace.transform.position, Quaternion.identity);
+                GameObject obj;
+                GameObject obstacle = FindParentWithTag(hit.transform.gameObject, "Obstacle");
+                obj = (GameObject)Instantiate(obstacle, mainWorkspace.transform.position, Quaternion.identity);
+                obj.name = obstacle.name + objectNumber;
+
                 obj.transform.localScale = new Vector3(1, 1, 1);
                 obj.transform.position = mainWorkspace.transform.position + new Vector3(0, 3.0f, 0);
                 obj.transform.parent = mainWorkspace.transform;
-                obj.name = "Object" + objectNumber;
+                
                 objectNumber++;
                 Debug.Log(obj);
                 objects.Add(obj);
 
                 backPressed(createBackButton);
+                selectPressed(selectButton);
+                selectObject(obj);
+                confirmPressed(confirmButton);
             }
-            else if (Physics.Raycast(ray, out hit) && validObject(hit.transform.name) && hit.transform.parent.name == "Workspace" && toolMode == 3)
+            else if (Physics.Raycast(ray, out hit) && FindParentWithTag(hit.transform.gameObject, "Obstacle") != null
+                && FindParentWithName(hit.transform.gameObject, "EditorWorkspace") != null && toolMode == 3)
             {
-                selectObject(hit.transform.gameObject);
+                GameObject obstacle = FindParentWithTag(hit.transform.gameObject, "Obstacle");
+                selectObject(obstacle);
+
                 title.text = "Confirm the object to delete it (" + hit.transform.gameObject + " selected)";
                 confirmButton.gameObject.SetActive(true);
             }
@@ -137,10 +177,70 @@ public class Editor : MonoBehaviour {
         if (toolMode == 2)
         {
             foreach (Transform child in createObjectChooser.GetComponentInChildren<Transform>())
-                child.Rotate(new Vector3(0.0f, 0.5f, 0.0f));
+                if (child.name != "Spotlight")
+                    child.Rotate(new Vector3(0.0f, 0.5f, 0.0f));
+        }
+        else if (toolMode == 6) // rotate
+        {
+            if (wandImage.GetComponent<CustomTracker>().tracking == true)
+            {
+                selectedObject.transform.rotation = wandEnd.transform.rotation;
+            }
+        }
+        else if (toolMode == 7) // scale
+        {
+            if (wandImage.GetComponent<CustomTracker>().tracking == true)
+            {
+                float dist;
+
+                dist = Vector3.Distance(selectedObject.transform.position, wandEnd.transform.position);
+                Vector3 direction = selectedObject.transform.position + wandEnd.transform.position;
+                direction.Normalize();
+
+                //Debug.Log(scaleFactor);
+                if (dist < 20 && dist > 0.01)
+                {
+                    selectedObject.transform.localScale = (dist * 0.04f) * direction;//new Vector3(dist * dist * 0.1f, dist * dist * 0.1f, dist * dist * 0.1f);
+                    selectedObject.transform.localScale = new Vector3(Mathf.Abs(selectedObject.transform.localScale.x), 
+                        Mathf.Abs(selectedObject.transform.localScale.y), Mathf.Abs(selectedObject.transform.localScale.z));
+                }
+                else
+                {
+                    selectedObject.transform.localScale = originalScale;
+                }
+            }
+
         }
 	
 	}
+
+    public static GameObject FindParentWithName(GameObject childObject, string name)
+    {
+        Transform t = childObject.transform;
+        while (t.parent != null)
+        {
+            if (t.parent.name == name)
+            {
+                return t.parent.gameObject;
+            }
+            t = t.parent.transform;
+        }
+        return null; // Could not find a parent with given tag.
+    }
+
+    public static GameObject FindParentWithTag(GameObject childObject, string tag)
+    {
+        Transform t = childObject.transform;
+        while (t.parent != null)
+        {
+            if (t.parent.tag == tag)
+            {
+                return t.parent.gameObject;
+            }
+            t = t.parent.transform;
+        }
+        return null; // Could not find a parent with given tag.
+    }
 
     bool IsPointerOverGameObject(int fingerId)
     {
@@ -153,11 +253,6 @@ public class Editor : MonoBehaviour {
     {
         return (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Began && !IsPointerOverGameObject(Input.GetTouch(0).fingerId)) 
             || (Input.mousePresent && Input.GetMouseButtonDown(0) && !EventSystem.current.IsPointerOverGameObject());
-    }
-
-    bool validObject(string n)
-    {
-        return n.StartsWith("Object") || n.StartsWith("Obstacle");
     }
 
     void deSelect()
@@ -275,6 +370,15 @@ public class Editor : MonoBehaviour {
             backButton.gameObject.SetActive(true);
             confirmButton.gameObject.SetActive(false);
             transformMenu.SetActive(true);
+
+            if (selectedObject.transform.Find("UI") != null)
+            {
+                optionsButton.gameObject.SetActive(true);
+            }
+            else
+            {
+                optionsButton.gameObject.SetActive(false);
+            }
         }
         else if (toolMode == 3) // delete
         {
@@ -291,6 +395,35 @@ public class Editor : MonoBehaviour {
             backButton.gameObject.SetActive(true);
             confirmButton.gameObject.SetActive(false);
             transformMenu.SetActive(true);
+        }
+        else if (toolMode == 6) // rotate
+        {
+            toolMode = 4;
+            editorMenu.SetActive(false);
+            //confirmMenu.SetActive(false);
+            backButton.gameObject.SetActive(true);
+            confirmButton.gameObject.SetActive(false);
+            transformMenu.SetActive(true);
+        }
+        else if (toolMode == 7) // scale
+        {
+            toolMode = 4;
+            editorMenu.SetActive(false);
+            //confirmMenu.SetActive(false);
+            backButton.gameObject.SetActive(true);
+            confirmButton.gameObject.SetActive(false);
+            transformMenu.SetActive(true);
+        }
+        else if (toolMode == 8) // options
+        {
+            toolMode = 4;
+            editorMenu.SetActive(false);
+            //confirmMenu.SetActive(false);
+            backButton.gameObject.SetActive(true);
+            confirmButton.gameObject.SetActive(false);
+            transformMenu.SetActive(true);
+
+            selectedObject.SendMessage("hideUI");
         }
     }
 
@@ -331,5 +464,35 @@ public class Editor : MonoBehaviour {
         backButton.gameObject.SetActive(false);
         confirmButton.gameObject.SetActive(true);
         selectedObject.transform.parent = ARCam.transform;
+    }
+
+    public void rotatePressed(Button b)
+    {
+        toolMode = 6;
+        transformMenu.SetActive(false);
+        //confirmMenu.SetActive(true);
+        backButton.gameObject.SetActive(false);
+        confirmButton.gameObject.SetActive(true);
+    }
+
+    public void scalePressed(Button b)
+    {
+        toolMode = 7;
+        transformMenu.SetActive(false);
+        //confirmMenu.SetActive(true);
+        backButton.gameObject.SetActive(false);
+        confirmButton.gameObject.SetActive(true);
+        originalScale = selectedObject.transform.localScale;
+    }
+
+    public void optionsPressed(Button b)
+    {
+        toolMode = 8;
+        transformMenu.SetActive(false);
+        //confirmMenu.SetActive(true);
+        backButton.gameObject.SetActive(false);
+        confirmButton.gameObject.SetActive(true);
+
+        selectedObject.SendMessage("showUI");
     }
 }
